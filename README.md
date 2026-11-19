@@ -304,6 +304,19 @@ LICENSE / NOTICE / CREDITS.md   许可证与署名
 - 预填充从 2k 的 3,197.5 平滑衰减到 128k 的 2,504.1 tok/s，128k 上下文首 token 约 52.5 s；cold 起步，不含 prefix cache 命中。
 - 解码各档固定 400 token 输出、单轮总耗时 35–61 s，属短测；**未覆盖**长上下文叠加高并发的组合压力，也未做多轮对话下的 KV cache 复用测量。视频 / PDF 输入路径仍无端到端服务测试。
 
+### C. 质量与工具评测：sparkDash（本机 Windows 11 ARM64）
+
+2026-11-20，在 sparkDash 面板的 `bench/quality` 与 `bench/tool-eval` 页发起（`http://127.0.0.1:5555`）。
+
+| 项目 | 结果 |
+| --- | --- |
+| 质量基准 | **94.0 / 100** · 12 个类别 · 2,230 项 · 334 m 56 s |
+| 工具评测 | **89.0 / 100**（`Adequate`，safety-capped）· 可部署性 76.0 · 响应性 47.0 · 104 场景（88 通过 / 9 部分通过 / 7 未通过）· 25 m 48 s |
+
+![sparkDash 质量基准](docs/images/sparkdash-quality.png)
+
+![sparkDash 工具评测](docs/images/sparkdash-tool-eval.png)
+
 ## 许可
 
 - 本仓库遵循上游 MIT 协议（`LICENSE`、`NOTICE`、`CREDITS.md`）。
