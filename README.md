@@ -132,7 +132,62 @@ curl http://127.0.0.1:8888/v1/chat/completions -H "Content-Type: application/jso
 }'
 ```
 
-### 7. 可选：视频 / PDF / 图像
+### 7. 局域网访问（可选）
+
+服务默认绑定 `0.0.0.0:8888`，即在所有网卡上监听；`HOST` / `PORT` 可在 `.env` 中覆盖（若把 `HOST` 设为 `127.0.0.1`，则只监听回环，局域网无法访问）。其他机器能否连上只取决于防火墙——Windows 默认丢弃未放行的入站连接。
+
+用**管理员** PowerShell 放行 TCP 8888：
+
+```powershell
+netsh advfirewall firewall add rule name="TensorFold (8888)" dir=in action=allow protocol=TCP localport=8888 profile=any
+```
+
+等价的 cmdlet 写法：
+
+```powershell
+New-NetFirewallRule -DisplayName "TensorFold (8888)" -Direction Inbound -Protocol TCP -LocalPort 8888 -Action Allow -Profile Any
+```
+
+> **`profile=any` 是必须的。** 新接入的网络在 Windows 上默认被判为「公用网络」，只写了 `private,domain` 的规则在公用网络下根本不匹配，症状是「本机能访问、别的机器连不上」。`profile=any` 仍然只放行这一个端口；不建议为了让网络通把整块网卡改成「专用网络」，那会一并放开文件共享、打印机、设备发现等一批服务。
+
+验证规则：
+
+```powershell
+Get-NetFirewallRule -DisplayName "TensorFold*" | Select-Object DisplayName, Enabled, Direction, Action, Profile
+```
+
+> 中文系统上 `netsh` 的输出是 GBK 编码，在 PowerShell 7 里用 `findstr` / `Select-String` 匹配「已启用」「配置文件」这类中文关键字常常返回空，看着像规则没建——以上面的 cmdlet，或 `netsh advfirewall firewall show rule name="TensorFold (8888)"` 的完整输出为准。
+
+从另一台机器测试：
+
+```powershell
+$ip = '192.168.1.100'                  # 示例地址，替换为本机局域网 IP
+Test-NetConnection $ip -Port 8888      # 期望 TcpTestSucceeded : True
+curl.exe "http://${ip}:8888/v1/models"
+```
+
+本机 IP 获取：
+
+```powershell
+Get-NetIPAddress -AddressFamily IPv4 |
+  Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } |
+  Select-Object IPAddress, InterfaceAlias
+```
+
+客户端（OpenAI 兼容）填：Base URL `http://<本机局域网IP>:8888/v1`，模型 `Qwen3.8-Flash-Next`；服务不校验 API Key，任意值或留空均可。
+
+连不上时按顺序排查：
+
+1. `Test-NetConnection` 超时 → 先 `ping <本机局域网IP>`；不通说明两台机器不在同一网段。
+2. 路由器 / AP 开了**客户端隔离（AP Isolation）**，或客户端连的是**访客网络**——两者都会让同网段设备互不可见。
+3. 改过端口 → 防火墙规则里的 `localport` 要同步修改。
+4. 只有本机能通 → 回到上面的 `profile=any` 检查规则生效范围。
+
+> `start.ps1` / `stop.ps1` 的就绪探测固定走 `127.0.0.1`，与对外监听地址无关，不影响局域网访问。
+
+> 服务不内置鉴权与 TLS，只应部署在可信局域网内，不要直接映射到公网。需要对外提供时，请在前置反向代理上做认证与 HTTPS。
+
+### 8. 可选：视频 / PDF / 图像
 
 - `VIDEO=1`：需要第 4 步的完整构建（视频库由 `build.ps1` 原生生成），并把 `native\lib` 加入 `PATH`。
 - `PDF=1`：使用 `pdfium.dll` 渲染 PDF 页面为图像。
@@ -172,6 +227,7 @@ LICENSE / NOTICE / CREDITS.md   许可证与署名
 | 模型清单 | `-ListOnly`：34 文件 / 95.2 GiB，`config.json` + `tensors/model-00001..00021` + tokenizer |
 | 构建后清理 | 无 `.zig-cache`、`zig-out`、`.work`、`__pycache__` 残留 |
 | 安全检测 | `build.ps1 -PreflightOnly` 工具链检测全 `[ OK ]`，未触发任何下载/安装 |
+| 局域网访问 | 放行 TCP 8888 入站（`profile=any`）后，局域网客户端连通成功；服务端 `GET /health` 返回 `200` |
 
 **未实测**：没有在本机重新下载并加载约 96 GiB 权重做吞吐测试，tok/s、TTFT、prefill 数值以上游数据为参考；视频/PDF 路径没有端到端服务测试。
 
