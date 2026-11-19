@@ -8,7 +8,7 @@ Windows 工具链构建并运行（Zig 0.17.0 + VS2022 Build Tools ARM64 + CUDA 
 - API：OpenAI 兼容，默认端口 `8888`，模型 ID `Qwen3.8-Flash-Next`
 - 引擎、依赖库与模型全部由仓库内的构建/下载脚本在本机生成，克隆后一条命令即可复现
 
-> Linux / Docker 版本的完整说明见 [MiaAI-Lab 上游 README（README.upstream.md）](README.upstream.md)。
+> 上游 DGX OS（DGX Spark）+ Docker 版本的完整说明见 [MiaAI-Lab 上游 README（README.upstream.md）](README.upstream.md)。
 
 ## 致谢
 
@@ -198,7 +198,7 @@ Get-NetIPAddress -AddressFamily IPv4 |
 
 ```text
 README.md              本文件：Windows 上手、安装使用、测试数据
-README.upstream.md     MiaAI-Lab 上游（Linux/Docker 版）README
+README.upstream.md     MiaAI-Lab 上游（DGX OS / Docker 版）README
 build.ps1              一键构建入口（source→patches→runtime→video→engine→verify）
 build_skill.md         构建指南：工具链、pin 版本、分阶段命令、排错
 start.ps1 / stop.ps1   启动/停止服务，参数与 start.sh / stop.sh 一致
@@ -207,6 +207,7 @@ scripts/               config.ps1、banner.ps1、build.ps1、build-video.ps1、
 patches/               上游 patches（0001..0005）
 patches/windows/       Windows 适配 patches（0001..0008）
 tools/                 检查与基准脚本
+docs/                  补充文档；docs/images/ 为 sparkDash 基准截图
 LICENSE / NOTICE / CREDITS.md   许可证与署名
 ```
 
@@ -214,7 +215,7 @@ LICENSE / NOTICE / CREDITS.md   许可证与署名
 
 ## 测试数据
 
-### A. 本 Windows 11 ARM64 移植的实测
+### A. 构建与运行检查（本机 Windows 11 ARM64）
 
 | 项目 | 结果 |
 | --- | --- |
@@ -229,30 +230,79 @@ LICENSE / NOTICE / CREDITS.md   许可证与署名
 | 安全检测 | `build.ps1 -PreflightOnly` 工具链检测全 `[ OK ]`，未触发任何下载/安装 |
 | 局域网访问 | 放行 TCP 8888 入站（`profile=any`）后，局域网客户端连通成功；服务端 `GET /health` 返回 `200` |
 
-**未实测**：没有在本机重新下载并加载约 96 GiB 权重做吞吐测试，tok/s、TTFT、prefill 数值以上游数据为参考；视频/PDF 路径没有端到端服务测试。
+### B. 性能实测：sparkDash（本机 Windows 11 ARM64）
 
-### B. 上游 DGX Spark（Linux）数据 — 引自 [`README.upstream.md`](README.upstream.md)，非本机实测
+环境：**华硕 ProArt GR1X（RTX Spark SFF，128 GB 内存 / 2 TB SSD）**，Windows 11 ARM64，NVIDIA GB10（`sm_121`）；
+模型 `Qwen3.8-Flash-Next`（NVFP4），TensorFold v1.2.7 原生构建，端口 8888；
+基准工具 [sparkDash](https://github.com/MiaAI-Lab/sparkDash) 的 `Open · Local` 模式，2026-11-19。
 
-v1.1.4 与 v1.2.7 A/B（`tools/bench_streams.py`，同一 Spark，默认参数，greedy，256 tokens，3 次中位数）：
+**解码配置一览**（均为 400 token 输出、top_k 20、1–5 并发）
 
-| 指标 | v1.1.4 | v1.2.7 | 变化 |
+| 配置 | 单流 tok/s | ×5 聚合 tok/s | ×5 TTFT |
 | --- | ---: | ---: | ---: |
-| Decode prose 1/3/5 streams（总 tok/s） | 57.8 / 133.4 / 167.9 | 58.5 / 156.1 / 230.1 | +1% / +17% / +37% |
-| Decode code 1/3/5 streams（总 tok/s） | 48.2 / 104.0 / 141.3 | 51.9 / 138.8 / 206.8 | +8% / +33% / +46% |
-| TTFT 5 streams prose/code（ms） | 440 / 372 | 177 / 173 | -60% / -53% |
-| Prefill 4k/31k/126k（tok/s） | 2,329 / 2,566 / 2,397 | 2,108 / 2,166 / 2,047 | -9% / -16% / -15% |
+| Prose，thinking off，temp 0 | 68.2 | 162.9 | 358 ms |
+| Prose，thinking on，temp 0.7 | 58.2 | 120.0 | 473 ms |
+| Code，thinking off，temp 0 | 98.6 | 211.1 | 417 ms |
 
-v1.1.4 sparkDash 数据（默认 checkpoint、262,144 窗口、5 并发、fp8 KV、vision on）：
+#### B.1 解码 · Prose（400 token，temp 0，thinking off，top_k 20）
 
-| 并发 | Decode prose 聚合 | Decode code 聚合 |
-| ---: | ---: | ---: |
-| 1 | 55.6 tok/s | 110.5 tok/s |
-| 2 | 95.4 tok/s | 147.2 tok/s |
-| 4 | 145.1 tok/s | 192.9 tok/s |
-| 5 | 156.1 tok/s | 217.6 tok/s |
+![sparkDash 解码基准：Prose，thinking off](docs/images/sparkdash-decode-prose.png)
 
-Prefill（cold）：4,134 tokens → 3,050 tok/s；32,807 → 2,735 tok/s；131,110 → 2,269 tok/s。
-更多检查项（exact/toolcheck/visioncheck/prompt_reuse/context_boundary）见 `README.upstream.md` 的 **Checks** 章节。
+| 并发 | TTFT | 聚合 tok/s | 单流 tok/s |
+| ---: | ---: | ---: | ---: |
+| ×1 | 107 ms | 68.2 | 68.2 |
+| ×2 | 179 ms | 90.0 | 46.7 |
+| ×3 | 234 ms | 117.2 | 40.4 |
+| ×4 | 294 ms | 137.0 | 35.6 |
+| ×5 | 358 ms | 162.9 | 34.1 |
+
+#### B.2 解码 · Prose + 思考（400 token，temp 0.7，thinking on，top_k 20）
+
+![sparkDash 解码基准：Prose，thinking on](docs/images/sparkdash-decode-thinking.png)
+
+| 并发 | TTFT | 聚合 tok/s | 单流 tok/s |
+| ---: | ---: | ---: | ---: |
+| ×1 | 150 ms | 58.2 | 58.2 |
+| ×2 | 228 ms | 78.0 | 40.0 |
+| ×3 | 301 ms | 101.3 | 35.6 |
+| ×4 | 383 ms | 108.9 | 29.8 |
+| ×5 | 473 ms | 120.0 | 26.8 |
+
+#### B.3 解码 · Code（400 token，temp 0，thinking off，top_k 20）
+
+![sparkDash 解码基准：Code，thinking off](docs/images/sparkdash-decode-code.png)
+
+| 并发 | TTFT | 聚合 tok/s | 单流 tok/s |
+| ---: | ---: | ---: | ---: |
+| ×1 | 138 ms | 98.6 | 98.6 |
+| ×2 | 203 ms | 140.4 | 73.3 |
+| ×3 | 276 ms | 173.4 | 61.1 |
+| ×4 | 353 ms | 194.1 | 51.6 |
+| ×5 | 417 ms | 211.1 | 45.2 |
+
+#### B.4 预填充（cold，1k → 128k 上下文）
+
+![sparkDash 预填充基准](docs/images/sparkdash-prefill.png)
+
+| 上下文 | 实际 token | TTFT | 预填充 tok/s |
+| ---: | ---: | ---: | ---: |
+| 1k | 1,064 | 442 ms | 3,448.8 ¹ |
+| 2k | 2,089 | 787 ms | 3,197.5 |
+| 4k | 4,137 | 1.53 s | 2,953.1 |
+| 8k | 8,232 | 3.02 s | 2,856.2 |
+| 16k | 16,423 | 6.05 s | 2,778.1 |
+| 32k | 32,808 | 12.25 s | 2,707.4 |
+| 64k | 65,575 | 25.10 s | 2,626.7 |
+| 128k | 131,113 | 52.49 s | 2,504.1 |
+
+¹ sparkDash 标注该档「置信度较低」：样本仅 1,064 token，请求开销占比偏大，参考价值有限。
+
+**读数要点**
+
+- 单流解码 Prose 68.2 / Code 98.6 tok/s；5 并发聚合 162.9 / 211.1 tok/s（约 2.4× / 2.1×），单流相应降到 34.1 / 45.2。
+- 开启 thinking（temp 0.7）后单流 58.2 tok/s、5 并发 120.0；同一并发下 TTFT 从 107 ms 升到 150 ms（×5 时 358 → 473 ms）。
+- 预填充从 2k 的 3,197.5 平滑衰减到 128k 的 2,504.1 tok/s，128k 上下文首 token 约 52.5 s；cold 起步，不含 prefix cache 命中。
+- 解码各档固定 400 token 输出、单轮总耗时 35–61 s，属短测；**未覆盖**长上下文叠加高并发的组合压力，也未做多轮对话下的 KV cache 复用测量。视频 / PDF 输入路径仍无端到端服务测试。
 
 ## 许可
 

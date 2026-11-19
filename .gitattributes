@@ -13,3 +13,4 @@
 *.lib   binary
 *.exe   binary
 *.whl   binary
+*.png   binary
