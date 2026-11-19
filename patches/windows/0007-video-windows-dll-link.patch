@@ -1,0 +1,34 @@
+diff --git a/zig/build/video.zig b/zig/build/video.zig
+index 3e33b3f..bbc4591 100644
+--- a/zig/build/video.zig
++++ b/zig/build/video.zig
+@@ -48,13 +48,22 @@ pub fn steps(b: *std.Build, target: std.Build.ResolvedTarget, host_tests: *std.B
+     const mod = b.createModule(.{ .target = target, .optimize = .ReleaseFast, .link_libc = true });
+     mod.addIncludePath(root.path(b, "include"));
+     mod.addCSourceFile(.{ .file = b.path("zig/src/video/tf_video.c"), .flags = &.{ "-std=c11", "-Wall" } });
+-    for ([_][]const u8{
+-        "libavformat.a",
+-        "libavcodec.a",
+-        "libswscale.a",
+-        "libavutil.a",
+-    }) |a| mod.addObjectFile(root.path(b, b.pathJoin(&.{ "lib", a })));
+-    mod.linkSystemLibrary("m", .{});
++    if (target.result.os.tag == .windows) {
++        // Windows recipe (patch 0007): PyAV 19.0.1 ships FFmpeg 9.0.2 as ARM64 DLLs. Link their import
++        // libraries instead of the static .a archives, and copy those DLLs beside tfvideo.dll at runtime.
++        mod.addLibraryPath(root.path(b, "lib"));
++        for ([_][]const u8{ "avformat", "avcodec", "swscale", "avutil" }) |name| {
++            mod.linkSystemLibrary(name, .{});
++        }
++    } else {
++        for ([_][]const u8{
++            "libavformat.a",
++            "libavcodec.a",
++            "libswscale.a",
++            "libavutil.a",
++        }) |a| mod.addObjectFile(root.path(b, b.pathJoin(&.{ "lib", a })));
++        mod.linkSystemLibrary("m", .{});
++    }
+     const lib = b.addLibrary(.{ .name = "tfvideo", .linkage = .dynamic, .root_module = mod });
+     step.dependOn(&b.addInstallArtifact(lib, .{ .dest_dir = .{ .override = .{ .custom = "native/lib" } } }).step);
+ }

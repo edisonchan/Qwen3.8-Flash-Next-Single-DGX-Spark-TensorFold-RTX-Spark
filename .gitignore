@@ -20,3 +20,10 @@ NOTES*.md
 *.rej
 *.log
 __pycache__/
+
+# --- Windows ARM64 port: local build artifacts, never distributed ---
+# engine checkout + build outputs (recreated by build.ps1)
+tensorfold/
+.work/
+# generated FFmpeg DLLs (GPLv2+, PyAV wheel), headers and import libs (recreated by scripts/build-gpl-video.ps1)
+third_party/

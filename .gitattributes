@@ -1,0 +1,15 @@
+# Line endings are load-bearing on this Windows port; pin them regardless of client autocrlf.
+# Patches must stay LF (CRLF breaks `git apply`); PowerShell scripts keep CRLF + their UTF-8 BOM.
+*.patch text eol=lf
+*.sh    text eol=lf
+*.py    text eol=lf
+*.ps1   text eol=crlf
+*.psm1  text eol=crlf
+*.md    text eol=lf
+*.env*  text eol=lf
+*.json  text eol=lf
+*.zig   text eol=lf
+*.dll   binary
+*.lib   binary
+*.exe   binary
+*.whl   binary

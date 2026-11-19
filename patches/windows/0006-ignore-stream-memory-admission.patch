@@ -1,0 +1,40 @@
+diff --git a/zig/src/native/cuda_streams.zig b/zig/src/native/cuda_streams.zig
+index 53f38f2..b6902d6 100644
+--- a/zig/src/native/cuda_streams.zig
++++ b/zig/src/native/cuda_streams.zig
+@@ -78,7 +78,34 @@ pub fn count(comptime F: type, a: Allocator, loaded: anytype, o: api.Open, b: Bu
+         };
+         return .{ .streams = o.lanes, .paged = null, .layout = null, .ledger = p };
+     }
+-    const streams = budget.admit(grow, b.stream_bytes, free, o.lanes, o.lanes_fixed) catch |e| {
++    // Windows recipe (patch 0006): the engine's reserve is deliberately conservative, so on a unified-memory
++    // DGX Spark its stream preflight can refuse a load the GPU can actually serve. Opt out via
++    // TENSORFOLD_IGNORE_STREAM_BUDGET=1 (the default in this recipe), keeping the refusal as a warning only.
++    // A real CUDA allocation failure is still reported by served.reserve() further down.
++    const ignore_budget = if (std.c.getenv("TENSORFOLD_IGNORE_STREAM_BUDGET")) |v| blk: {
++        const text = std.mem.span(v);
++        break :blk text.len > 0 and
++            !std.mem.eql(u8, text, "0") and
++            !std.mem.eql(u8, text, "false") and
++            !std.mem.eql(u8, text, "off");
++    } else false;
++    const streams: u32 = if (ignore_budget) blk: {
++        const fits: u32 = if (b.stream_bytes == 0)
++            o.lanes
++        else
++            free +| (std.math.cast(u32, grow / b.stream_bytes) orelse std.math.maxInt(u32));
++        if (fits < o.lanes) {
++            std.log.warn("ignoring CUDA memory admission (TENSORFOLD_IGNORE_STREAM_BUDGET): " ++ too_many ++ "; a real reservation failure is still fatal.", .{
++                o.lanes,
++                toGib(b.stream_bytes * (o.lanes -| free)),
++                b.window,
++                toGib(b.room),
++                b.low,
++                @max(fits, 1),
++            });
++        }
++        break :blk o.lanes;
++    } else budget.admit(grow, b.stream_bytes, free, o.lanes, o.lanes_fixed) catch |e| {
+         problem.* = switch (e) {
+             error.NoStream => try std.fmt.allocPrint(a, no_stream, .{
+                 b.window,

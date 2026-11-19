@@ -1,0 +1,25 @@
+diff --git a/zig/build/cuda_fatbin.zig b/zig/build/cuda_fatbin.zig
+index 302a152..9a47ae0 100644
+--- a/zig/build/cuda_fatbin.zig
++++ b/zig/build/cuda_fatbin.zig
+@@ -20,7 +20,19 @@ pub fn fatbin(b: *std.Build, nvcc: []const u8, version: std.Build.LazyPath, k: K
+     run.addFileInput(version);
+     run.addArgs(&torch_flags);
+     // CUDA 13's headers with cl.exe need MSVC's conforming preprocessor and M_SQRT2's math define.
+-    if (b.graph.host.result.os.tag == .windows) run.addArgs(&.{ "-Xcompiler=/Zc:preprocessor", "-D_USE_MATH_DEFINES" });
++    // /utf-8 keeps the headers' non-ASCII comments from flooding the Chinese code page with C4819.
++    // --split-compile=0 lets one nvcc use all cores inside a kernel; it is opt-in because `zig build -jN`
++    // already runs N whole nvcc processes in parallel, so enabling both oversubscribes the machine.
++    if (b.graph.host.result.os.tag == .windows) {
++        run.addArgs(&.{ "-Xcompiler=/Zc:preprocessor", "-Xcompiler=/utf-8", "-D_USE_MATH_DEFINES" });
++        var split = false;
++        const environ = std.process.Environ{ .block = .global };
++        if (environ.getAlloc(b.allocator, "TENSORFOLD_NVCC_SPLIT_COMPILE")) |text| {
++            defer b.allocator.free(text);
++            split = text.len > 0 and !std.mem.eql(u8, text, "0") and !std.mem.eql(u8, text, "false");
++        } else |_| {}
++        if (split) run.addArgs(&.{"--split-compile=0"});
++    }
+     run.addArgs(k.flags);
+     // Generated CUDA sources resolve the same maintained headers as checked-in units.
+     run.addDirectoryArg2(b.path("zig/kernels/cuda"), .{ .prefix = "-I" });
