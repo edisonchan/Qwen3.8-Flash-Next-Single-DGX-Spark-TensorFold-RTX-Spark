@@ -1,5 +1,7 @@
 # Qwen3.8-Flash-Next NVFP4 — Windows 11 ARM64 移植版
 
+中文 | [English](README.en.md)
+
 面向 **RTX Spark / DGX Spark（GB10, `sm_121`）Windows 11 ARM64** 的本地推理配方，基于原生
 Windows 工具链构建并运行（Zig 0.17.0 + VS2022 Build Tools ARM64 + CUDA Toolkit 13.4），无 Docker / 容器依赖。
 
@@ -198,6 +200,7 @@ Get-NetIPAddress -AddressFamily IPv4 |
 
 ```text
 README.md              本文件：Windows 上手、安装使用、测试数据
+README.en.md           英文版
 README.upstream.md     MiaAI-Lab 上游（DGX OS / Docker 版）README
 build.ps1              一键构建入口（source→patches→runtime→video→engine→verify）
 build_skill.md         构建指南：工具链、pin 版本、分阶段命令、排错
