@@ -36,6 +36,23 @@ Full attributions in [`CREDITS.md`](CREDITS.md); third-party notices in [`NOTICE
 
 ## Install & Use (fresh RTX Spark / Windows 11 ARM64)
 
+> **Don't want to build? Grab the binary release**: download the zip (~21 MB, engine + non-GPL
+> runtime libraries) from [Releases](https://github.com/edisonchan/Qwen3.8-Flash-Next-Single-DGX-Spark-TensorFold-RTX-Spark/releases),
+> unzip and **double-click `menu.bat`** — no Python / Docker / build tools needed:
+>
+> ```text
+> [1] Start server   [2] Stop server   [3] Restart server
+> [4] Download weights (auto-picks Hugging Face / ModelScope, resumable, writes .env for you)
+> [5] Status (engine / weights / server / API / LAN address)
+> [6] Build video stack (optional)
+> ```
+>
+> First run: unzip → `[4]` to fetch the weights (~95 GiB) → `[1]` to start; the OpenAI-compatible
+> API is then at `http://<host-ip>:8888/v1`. The 128 GB page file (step 1) and the firewall rule
+> (step 7) still need to be done once. Steps 1–8 below cover the source build and advanced
+> configuration; the command line and the menu are equivalent (`start.ps1` / `stop.ps1` /
+> `scripts\download-model.ps1`, parameters 1:1 with the upstream `.sh` scripts).
+
 ### 1. Set 128 GB virtual memory first (WDDM)
 
 Windows WDDM manages GPU-visible system memory through the page file. The model is ~95 GiB; a page
@@ -118,6 +135,11 @@ powershell -ExecutionPolicy Bypass -File .\scripts\download-model.ps1
 Zero-dependency curl download, laid out flat under `D:\llm\models\Qwen3.8-Flash-Next-FP4-Local` —
 **no cache, no symlinks, no `.git`** — with resumable downloads.
 Manifest: 34 files, ~95.2 GiB, including `config.json`, `tensors/model-00001..00021` and the tokenizer.
+
+Dual-source download: the default `-Source auto` pings Hugging Face and ModelScope (single packet,
+4 s timeout) and picks the faster one (falls back to API response time when ICMP is unavailable);
+`-Source hf|modelscope` forces one source; a file failing repeatedly retries from the other source;
+already-complete files are skipped. For daily use, double-click `menu.bat` and pick `[4]`.
 
 ### 6. Configure and start
 
@@ -222,7 +244,9 @@ If it doesn't connect, check in order:
 ### 8. Optional: video / PDF / image
 
 - `VIDEO=1`: requires the full build from step 4 (video libraries are generated natively by
-  `build.ps1`) and `native\lib` on `PATH`.
+  `build.ps1`) and `native\lib` on `PATH`. Release-zip users: run
+  `scripts\build-gpl-video.ps1` (or menu `[6]`) to fetch the FFmpeg components from official
+  upstream sources and build `tfvideo.dll` locally, then set `VIDEO=1`.
 - `PDF=1`: renders PDF pages to images via `pdfium.dll`.
 - Images: JPEG / PNG / WebP decoded by `turbojpeg.dll` and `libwebpdecoder.dll`.
 - Video / PDF paths on this Windows port have **no end-to-end live validation yet**; the text path does
@@ -236,9 +260,11 @@ README.en.md           This file (English)
 README.upstream.md     MiaAI-Lab upstream (DGX OS / Docker) README
 build.ps1              One-command build entry (source→patches→runtime→video→engine→verify)
 build_skill.md         Build guide: toolchain, pinned versions, per-stage commands, troubleshooting
+menu.ps1 / menu.bat    Interactive menu (double-click menu.bat): start/stop, weights download, status, video stack
 start.ps1 / stop.ps1   Start/stop the server, parameters identical to start.sh / stop.sh
 scripts/               config.ps1, banner.ps1, build.ps1, build-video.ps1,
-                       build-gpl-video.ps1, download-model.ps1, apply-patches.ps1, ...
+                       build-gpl-video.ps1, download-model.ps1,
+                       package-release.ps1, apply-patches.ps1, ...
 patches/               Upstream patches (0001..0005)
 patches/windows/       Windows adaptation patches (0001..0008)
 tools/                 Checks and benchmark scripts

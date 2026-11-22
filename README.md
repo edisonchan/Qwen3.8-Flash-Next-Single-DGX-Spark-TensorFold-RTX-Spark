@@ -33,6 +33,17 @@ Windows 工具链构建并运行（Zig 0.17.0 + VS2022 Build Tools ARM64 + CUDA 
 
 ## 安装与使用（全新 RTX Spark / Windows 11 ARM64）
 
+> **不想构建？直接下载二进制 Release**：[Releases](https://github.com/edisonchan/Qwen3.8-Flash-Next-Single-DGX-Spark-TensorFold-RTX-Spark/releases) 页下载 zip（引擎 + 非 GPL 运行时库，约 21 MB），解压后**双击 `menu.bat`** 即可，无需 Python / Docker / 构建工具：
+>
+> ```text
+> [1] 启动服务   [2] 停止服务   [3] 重启服务
+> [4] 下载模型权重（自动择优 Hugging Face / ModelScope，断点续传，完成后自动写入 .env）
+> [5] 查看状态（引擎 / 权重 / 服务 / API / 局域网地址）
+> [6] 构建视频栈（可选）
+> ```
+>
+> 首次使用：解压 → 菜单 `[4]` 下权重（约 95 GiB）→ `[1]` 启动，OpenAI 兼容 API 即位于 `http://<主机IP>:8888/v1`。第 1 节的 128 GB 虚拟内存与防火墙放行（第 7 节）仍需照做一次。下面的第 1–8 节面向源码构建与高级配置；命令行与菜单等价（`start.ps1` / `stop.ps1` / `scripts\download-model.ps1` 等，参数与上游 `.sh` 1:1）。
+
 ### 1. 先设置 128 GB 虚拟内存（WDDM）
 
 Windows 的 WDDM 通过页文件管理 GPU 可见的系统内存。模型约 95 GiB，页文件过小会导致「看似有空闲内存但仍分配失败」。
@@ -104,6 +115,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\download-model.ps1
 
 零依赖 curl 下载，直接平铺落盘到 `D:\llm\models\Qwen3.8-Flash-Next-FP4-Local`，**无 cache、无软链、无 `.git`**，支持断点续传。
 清单：34 个文件、约 95.2 GiB，含 `config.json`、`tensors/model-00001..00021` 与 tokenizer。
+
+双源下载：默认 `-Source auto` 用 ping（单包 4 秒超时）实测 Hugging Face 与 ModelScope 时延自动择优（ICMP 不可用时按 API 响应排序兜底），可显式 `-Source hf|modelscope`；单文件连续失败自动切换另一源续传；已完整的文件跳过。日常使用直接双击 `menu.bat` 选 `[4]` 更省事。
 
 ### 6. 配置与启动
 
@@ -191,7 +204,7 @@ Get-NetIPAddress -AddressFamily IPv4 |
 
 ### 8. 可选：视频 / PDF / 图像
 
-- `VIDEO=1`：需要第 4 步的完整构建（视频库由 `build.ps1` 原生生成），并把 `native\lib` 加入 `PATH`。
+- `VIDEO=1`：需要第 4 步的完整构建（视频库由 `build.ps1` 原生生成），并把 `native\lib` 加入 `PATH`。二进制 Release 用户改为运行 `scripts\build-gpl-video.ps1`（或菜单 `[6]`），从 FFmpeg / PyAV 官方源取料本机生成 `tfvideo.dll`，再设 `VIDEO=1`。
 - `PDF=1`：使用 `pdfium.dll` 渲染 PDF 页面为图像。
 - 图像：JPEG / PNG / WebP 由 `turbojpeg.dll`、`libwebpdecoder.dll` 解码。
 - 视频/PDF 在 Windows 移植上**尚未做端到端实跑验证**；文本路径不经过它们。
@@ -204,9 +217,11 @@ README.en.md           英文版
 README.upstream.md     MiaAI-Lab 上游（DGX OS / Docker 版）README
 build.ps1              一键构建入口（source→patches→runtime→video→engine→verify）
 build_skill.md         构建指南：工具链、pin 版本、分阶段命令、排错
+menu.ps1 / menu.bat    交互选单（双击 menu.bat）：启停 / 下载权重 / 状态 / 视频栈
 start.ps1 / stop.ps1   启动/停止服务，参数与 start.sh / stop.sh 一致
 scripts/               config.ps1、banner.ps1、build.ps1、build-video.ps1、
-                       build-gpl-video.ps1、download-model.ps1、apply-patches.ps1 等
+                       build-gpl-video.ps1、download-model.ps1、
+                       package-release.ps1、apply-patches.ps1 等
 patches/               上游 patches（0001..0005）
 patches/windows/       Windows 适配 patches（0001..0008）
 tools/                 检查与基准脚本
