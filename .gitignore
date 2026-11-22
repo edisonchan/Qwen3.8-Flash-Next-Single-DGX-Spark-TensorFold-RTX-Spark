@@ -27,3 +27,5 @@ tensorfold/
 .work/
 # generated FFmpeg DLLs (GPLv2+, PyAV wheel), headers and import libs (recreated by scripts/build-gpl-video.ps1)
 third_party/
+# release staging + zips (recreated by scripts/package-release.ps1)
+dist-release/
