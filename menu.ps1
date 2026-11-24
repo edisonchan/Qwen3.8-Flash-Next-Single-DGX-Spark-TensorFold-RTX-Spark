@@ -64,18 +64,54 @@ function Get-Effective {
 # ---------------------------------------------------------------- child runner
 function Run-Child {
   # Run one of the shipped scripts in a child powershell so an `exit` inside it cannot
-  # close the menu; output streams straight to this console.
+  # close the menu. Start-Process -NoNewWindow shares this console instead of piping
+  # stdout: piping would hang after start.ps1, because the detached server process
+  # inherits the pipe's write handle and the Out-Host reader never sees EOF.
   param([string]$Script, [string[]]$Arguments = @())
   if (-not (Test-Path -LiteralPath $Script)) { SayErr "not found: $Script"; return 1 }
-  # Out-Host keeps the child's streamed output visible: a native child's stdout would
-  # otherwise land on this function's success stream and be dropped by [void](...).
-  & $PsExe -NoProfile -ExecutionPolicy Bypass -File $Script @Arguments | Out-Host
-  return $LASTEXITCODE
+  $argLine = '-NoProfile -ExecutionPolicy Bypass -File "{0}"' -f $Script
+  foreach ($a in $Arguments) {
+    if ($a -match '[\s"]') { $argLine += ' "{0}"' -f ($a -replace '"','\"') } else { $argLine += " $a" }
+  }
+  # Shared console, no stdout pipe: a detached grandchild (the server) that inherits a
+  # pipe write handle would keep any pipeline/Out-Host reader waiting for EOF forever
+  # (that is what hung the menu after start.ps1).
+  #
+  # The raw .NET API is the primary path, not Start-Process, for two 5.1 quirks (double-
+  # clicking menu.bat runs this file on 5.1):
+  #   * Start-Process -Wait waits for the child's whole process tree, so after [1] the
+  #     menu sat on the detached server instead of returning the prompt. Process.WaitForExit
+  #     waits for the direct child only -- measured 0.8 s vs 20.2 s against a 20 s
+  #     server-like grandchild (it also keeps running).
+  #   * Start-Process throws "已添加项 ... HTTPS_PROXY" when the environment holds one
+  #     variable in two casings (HTTP_PROXY + http_proxy); the .NET API inherits the
+  #     environment block verbatim and never builds that dictionary.
+  try {
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $PsExe
+    $psi.Arguments = $argLine
+    $psi.WorkingDirectory = $Root
+    $psi.UseShellExecute = $false   # share this console, no new window
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    $proc.WaitForExit()
+    return $proc.ExitCode
+  } catch {
+    # Fallback: new window via Start-Process (rare: only if the .NET spawn itself failed).
+    try {
+      $p = Start-Process -FilePath $PsExe -ArgumentList $argLine -Wait -PassThru -ErrorAction Stop
+      return $p.ExitCode
+    } catch {
+      SayErr "spawn failed: $($_.Exception.Message)"
+      return 1
+    }
+  }
 }
 
 # ---------------------------------------------------------------- actions
 function Do-Start {
   Say '启动服务 / starting the server (first load takes about a minute / 首次加载约一分钟)...'
+  # [void] only drops Run-Child's exit-code int; the child writes to the shared console
+  # directly, so start.ps1's banner/steps/LIVE lines still show.
   [void](Run-Child (Join-Path $Root 'start.ps1'))
 }
 function Do-Restart {
@@ -190,9 +226,13 @@ while ($true) {
   Show-Menu
   $c = (Read-Host '  请输入编号 / enter a number').Trim()
   switch ($c) {
-    '1' { Do-Start; Pause-Back }
+    # [1]/[3] end the session: once the server is up (start.ps1 printed LIVE and
+    # exited), hand the console straight back -- back to the command prompt, like
+    # running start.ps1 directly. The server keeps running detached; stop it from
+    # the menu next time or with .\stop.ps1.
+    '1' { Do-Start; Write-Host '[menu] 服务已启动，返回命令行 / server started, back to the prompt'; exit 0 }
+    '3' { Do-Restart; Write-Host '[menu] 服务已重启，返回命令行 / server restarted, back to the prompt'; exit 0 }
     '2' { Do-Stop; Pause-Back }
-    '3' { Do-Restart; Pause-Back }
     '4' { Do-Download; Pause-Back }
     '5' { Do-Status }
     '6' { Do-VideoBuild; Pause-Back }
